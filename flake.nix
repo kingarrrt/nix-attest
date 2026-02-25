@@ -1,5 +1,5 @@
 {
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   outputs =
     inputs:
     let
@@ -13,13 +13,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          nix-attest-post-build-hook = pkgs.callPackage ./nix-attest-post-build-hook.nix { };
-          example = pkgs.writeShellApplication {
-            name = "example";
-            text = ''
-              echo "Hello, world!"
-            '';
-          };
+          default = pkgs.callPackage ./nix-attest-post-build-hook.nix { };
         }
       );
     };

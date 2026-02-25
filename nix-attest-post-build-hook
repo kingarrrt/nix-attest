@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+derivation=$(
+  nix derivation show "$DRV_PATH" --json |
+    jq --arg DRV_PATH "$DRV_PATH" '.[$DRV_PATH]'
+)
+
+jq --null-input \
+  --argjson derivation "$derivation" \
+  --argjson resolvedDependencies "$({
+    jq --raw-output '.inputDrvs | keys[]' <<<"$derivation"
+    jq --raw-output '.inputSrcs[]' <<<"$derivation"
+  } | while read -r dependency; do
+    nix path-info "$dependency" --json | jq '.[0] | {
+      uri: ("file://" + .path),
+      digest: {
+        narHash: .narHash,
+        sha256: (.narHash | split(":") | .[1])
+      }
+    }'
+  done | jq --slurp .)" \
+  --argjson subjects "$(for path in $OUT_PATHS; do
+    nix path-info "$path" --json | jq --arg path "$path" '
+      .[] | {
+        name: $path,
+        digest: {
+          narHash: .narHash,
+          sha256: (.narHash | split(":") | .[1])
+        }
+      }'
+  done | jq --slurp .)" \
+  --arg builderId "${BUILDER_ID:-nix-daemon}" \
+  --arg invocationId "${INVOCATION_ID:-$(uuidgen)}" \
+  '{
+    "_type": "https://in-toto.io/Statement/v1",
+    "subject": $subjects,
+    "predicateType": "https://slsa.dev/provenance/v1",
+    "predicate": {
+      "buildDefinition": {
+        "buildType": "https://nixos.org/build/v1",
+        "externalParameters": {
+          "derivation": $derivation
+        },
+        "internalParameters": {},
+        "resolvedDependencies": $resolvedDependencies
+      },
+      "runDetails": {
+        "builder": {
+          "id": $builderId
+        },
+        "metadata": {
+          "invocationId": $invocationId
+        }
+      }
+    }
+  }' >"$(basename "$DRV_PATH").slsa.json"
